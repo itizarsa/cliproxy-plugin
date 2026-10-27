@@ -1,4 +1,4 @@
-// Command reset-first is a CLIProxyAPI scheduler plugin that sends each request to the Claude
+// Command cliproxy-plugin is a CLIProxyAPI scheduler plugin that sends each request to the Claude
 // account whose weekly window resets soonest, so no window resets with quota left unused. It is
 // also the hub's quota provider for Claude, so `POST /v0/management/quota/fetch` answers.
 //
@@ -179,7 +179,7 @@ func registration() any {
 	return map[string]any{
 		"schema_version": pluginabi.SchemaVersion,
 		"metadata": pluginapi.Metadata{
-			Name:             "reset-first",
+			Name:             "cliproxy-plugin",
 			Version:          "0.1.0",
 			Author:           "arshath",
 			GitHubRepository: "https://github.com/itizarsa/cliproxy-plugin",
@@ -354,7 +354,7 @@ func manage(cfg *config, method, path string, body, out any) error {
 }
 
 func logf(format string, args ...any) {
-	fmt.Fprintf(os.Stderr, "[reset-first] "+format+"\n", args...)
+	fmt.Fprintf(os.Stderr, "[cliproxy-plugin] "+format+"\n", args...)
 }
 
 type envelope struct {

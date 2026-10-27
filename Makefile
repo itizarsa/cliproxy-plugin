@@ -8,11 +8,11 @@ test:
 	go test ./...
 
 build: test
-	go build -buildmode=c-shared -o build/reset-first.dylib .
+	go build -buildmode=c-shared -o build/cliproxy-plugin.dylib .
 
 install: build
 	mkdir -p $(PLUGIN_DIR)
-	cp build/reset-first.dylib $(PLUGIN_DIR)/
+	cp build/cliproxy-plugin.dylib $(PLUGIN_DIR)/
 	brew services restart cliproxyapi
 
 # After `brew upgrade cliproxyapi`: move the SDK to the hub's version, then `make install`.

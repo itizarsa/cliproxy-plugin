@@ -27,7 +27,7 @@ plugins:
   enabled: true
   dir: "~/.config/cliproxyapi/plugins"
   configs:
-    reset-first:
+    cliproxy-plugin:
       enabled: true
       priority: 1
       management_key: "..."     # management.secret-key
