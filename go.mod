@@ -1,4 +1,4 @@
-module github.com/itizarsa/cliproxy-reset-first
+module github.com/itizarsa/cliproxy-plugin
 
 go 1.26.10
 

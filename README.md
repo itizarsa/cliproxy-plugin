@@ -1,4 +1,4 @@
-# cliproxy-reset-first
+# cliproxy-plugin
 
 A [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) scheduler plugin: each Claude
 request goes to the account whose weekly window resets soonest. Quota left in a window when it

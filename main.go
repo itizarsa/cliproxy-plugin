@@ -182,7 +182,7 @@ func registration() any {
 			Name:             "reset-first",
 			Version:          "0.1.0",
 			Author:           "arshath",
-			GitHubRepository: "https://github.com/itizarsa/cliproxy-reset-first",
+			GitHubRepository: "https://github.com/itizarsa/cliproxy-plugin",
 			ConfigFields: []pluginapi.ConfigField{
 				{Name: "management_url", Type: pluginapi.ConfigFieldTypeString, Description: "The hub's own address, for reading account quota."},
 				{Name: "management_key", Type: pluginapi.ConfigFieldTypeString, Description: "Management API secret."},
