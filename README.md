@@ -6,6 +6,8 @@ resets is lost, so the account about to reset is spent first.
 
 - Reset times come from the rate-limit headers the hub already records per account. An account
   with none yet is asked once through Anthropic's usage endpoint, via the hub's `api-call`.
+- It is also the hub's quota provider for Claude: `POST /v0/management/quota/fetch` with an
+  account's `auth_index` returns fresh `5h` and `7d` buckets, and the ranking takes that reading.
 - An account at 98% of its week drops to the back. One cooling down on its 5-hour limit isn't
   offered by the hub, so the next one takes over.
 - The hub asks a scheduler plugin before its session affinity, and affinity doesn't bind the

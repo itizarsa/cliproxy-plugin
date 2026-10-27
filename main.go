@@ -1,5 +1,6 @@
 // Command reset-first is a CLIProxyAPI scheduler plugin that sends each request to the Claude
-// account whose weekly window resets soonest, so no window resets with quota left unused.
+// account whose weekly window resets soonest, so no window resets with quota left unused. It is
+// also the hub's quota provider for Claude, so `POST /v0/management/quota/fetch` answers.
 //
 // The hub asks a scheduler plugin before its own session affinity, and affinity only binds the
 // accounts it picks itself. Picking deterministically from one ranking keeps a session on one
@@ -70,6 +71,8 @@ var (
 	startRefresh  sync.Once
 	client        = &http.Client{Timeout: 30 * time.Second}
 	// Probed readings, kept until their reset passes so an idle account is asked about once.
+	// Quota fetches arrive on the hub's goroutines, so the maps are guarded.
+	probeMu  sync.Mutex
 	probes   = map[string]reading{}
 	probedAt = map[string]time.Time{}
 )
@@ -135,6 +138,20 @@ func handle(method string, body []byte) ([]byte, error) {
 			return nil, err
 		}
 		return okEnvelope(pick(req))
+	case pluginabi.MethodQuotaIdentifier:
+		return okEnvelope(map[string]string{"identifier": "claude"})
+	case pluginabi.MethodQuotaDescribe:
+		return okEnvelope(pluginapi.QuotaDescribeResponse{SupportedProviders: []string{"claude"}, DisplayName: "Claude usage"})
+	case pluginabi.MethodQuotaFetch:
+		var req pluginapi.QuotaFetchRequest
+		if err := json.Unmarshal(body, &req); err != nil {
+			return nil, err
+		}
+		resp, err := fetchQuota(currentConfig.Load(), req)
+		if err != nil {
+			return nil, err
+		}
+		return okEnvelope(resp)
 	default:
 		return errorEnvelope("unknown_method", "unknown method: "+method), nil
 	}
@@ -173,7 +190,7 @@ func registration() any {
 				{Name: "spent", Type: pluginapi.ConfigFieldTypeNumber, Description: "Weekly utilization (0-1) at which an account counts as spent."},
 			},
 		},
-		"capabilities": map[string]bool{"scheduler": true},
+		"capabilities": map[string]bool{"scheduler": true, "quota_provider": true},
 	}
 }
 
@@ -248,32 +265,64 @@ func refresh(cfg *config) ([]string, error) {
 // probe asks Anthropic's usage endpoint through the hub, which fills in the account's token,
 // for an account the hub has no current headers for. At most every 30 minutes per account.
 func probe(cfg *config, f authFile, now time.Time) (reading, bool) {
+	probeMu.Lock()
 	if r, ok := probes[f.ID]; ok && r.reset.After(now) {
+		probeMu.Unlock()
 		return r, true
 	}
 	if now.Sub(probedAt[f.ID]) < 30*time.Minute {
+		probeMu.Unlock()
 		return reading{}, false
 	}
 	probedAt[f.ID] = now
+	probeMu.Unlock()
+	body, err := usage(cfg, f.AuthIndex)
+	if err != nil {
+		logf("usage probe for %s failed: %v", f.Email, err)
+		return reading{}, false
+	}
+	return remember(f.ID, body)
+}
+
+// fetchQuota answers the hub's quota fetch with a fresh reading, which the ranking also takes.
+func fetchQuota(cfg *config, req pluginapi.QuotaFetchRequest) (pluginapi.QuotaFetchResponse, error) {
+	body, err := usage(cfg, req.AuthIndex)
+	if err != nil {
+		return pluginapi.QuotaFetchResponse{}, err
+	}
+	remember(req.AuthID, body)
+	return quotaResponse(body)
+}
+
+func remember(id string, body []byte) (reading, bool) {
+	r, ok := parseUsage(body)
+	if ok {
+		probeMu.Lock()
+		probes[id] = r
+		probeMu.Unlock()
+	}
+	return r, ok
+}
+
+// usage asks Anthropic's usage endpoint as the account, through the hub's api-call.
+func usage(cfg *config, authIndex string) ([]byte, error) {
 	var resp struct {
 		StatusCode int    `json:"status_code"`
 		Body       string `json:"body"`
 	}
 	err := manage(cfg, "POST", "api-call", map[string]any{
-		"auth_index": f.AuthIndex,
+		"auth_index": authIndex,
 		"method":     "GET",
 		"url":        "https://api.anthropic.com/api/oauth/usage",
 		"header":     map[string]string{"Authorization": "Bearer $TOKEN$", "anthropic-beta": "oauth-2025-04-20"},
 	}, &resp)
-	if err != nil || resp.StatusCode != http.StatusOK {
-		logf("usage probe for %s failed: %v (status %d)", f.Email, err, resp.StatusCode)
-		return reading{}, false
+	if err != nil {
+		return nil, err
 	}
-	r, ok := parseUsage([]byte(resp.Body))
-	if ok {
-		probes[f.ID] = r
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("status %d", resp.StatusCode)
 	}
-	return r, ok
+	return []byte(resp.Body), nil
 }
 
 func manage(cfg *config, method, path string, body, out any) error {

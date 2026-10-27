@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strconv"
 	"time"
+
+	"github.com/router-for-me/CLIProxyAPI/v8/sdk/pluginapi"
 )
 
 // reading is what is known of one account's weekly window.
@@ -50,6 +52,37 @@ func parseUsage(body []byte) (reading, bool) {
 		return reading{}, false
 	}
 	return reading{reset: usage.SevenDay.ResetsAt, used: usage.SevenDay.Utilization / 100}, true
+}
+
+// quotaResponse turns the usage body into the hub's normalized quota: a "5h" and a "7d" bucket.
+func quotaResponse(body []byte) (pluginapi.QuotaFetchResponse, error) {
+	type window struct {
+		Utilization float64   `json:"utilization"`
+		ResetsAt    time.Time `json:"resets_at"`
+	}
+	var usage struct {
+		FiveHour *window `json:"five_hour"`
+		SevenDay *window `json:"seven_day"`
+	}
+	if err := json.Unmarshal(body, &usage); err != nil {
+		return pluginapi.QuotaFetchResponse{}, err
+	}
+	var buckets []pluginapi.QuotaBucket
+	for _, w := range []struct {
+		name string
+		u    *window
+	}{{"5h", usage.FiveHour}, {"7d", usage.SevenDay}} {
+		u := w.u
+		if u == nil {
+			continue
+		}
+		bucket := pluginapi.QuotaBucket{Window: w.name, RemainingFraction: 1 - u.Utilization/100}
+		if !u.ResetsAt.IsZero() {
+			bucket.ResetTime = u.ResetsAt.UTC().Format(time.RFC3339)
+		}
+		buckets = append(buckets, bucket)
+	}
+	return pluginapi.QuotaFetchResponse{Groups: []pluginapi.QuotaGroup{{DisplayName: "Claude", Buckets: buckets}}}, nil
 }
 
 // order ranks accounts soonest weekly reset first: what's left in a window when it resets is lost.
